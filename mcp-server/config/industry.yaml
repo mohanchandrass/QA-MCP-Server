@@ -1,0 +1,160 @@
+industry: banking   # change only this for industry switching
+
+persona:
+  tone: formal
+  verbosity: concise
+  style: instructional
+
+# ---------------- DECISION POLICY ----------------
+decision_policy:
+  knowledge_first: true
+  require_explicit_action_request: true
+  default_fallback_response: provide_guidance
+  expose_escalation_to_user: false
+
+sampling:
+  confidence_threshold: 0.75
+  repeated_failure_limit: 2
+
+# ---------------- INTENT RESOLUTION ----------------
+intent_resolution:
+  strategy: hybrid
+  fallback_intent: general
+
+  # Explicit priority to resolve overlaps (higher wins)
+  intent_priority:
+    - billing
+    - account_help
+    - verification
+    - order_status
+    - troubleshooting
+    - general
+
+  # Security guardrails (pre-intent)
+  security_triggers:
+    force_general:
+      - ignore rules
+      - override
+      - admin access
+      - bypass
+      - superuser
+
+intents:
+
+  # ---------------- ACCOUNT & ACCESS ----------------
+  - name: account_help
+    categories: ["account_help"]
+    primary_triggers:
+      - login
+      - password
+      - account
+      - access
+      - locked
+      - suspended
+    secondary_triggers:
+      - cannot sign in
+      - forgot credentials
+      - unable to access
+      - not letting me in
+      - create a ticket
+      - raise a ticket
+      - contact support for login
+    severity: medium
+
+  # ---------------- BILLING ----------------
+  - name: billing
+    categories: ["billing"]
+    primary_triggers:
+      - payment
+      - refund
+      - charged
+      - billing
+      - deducted
+    secondary_triggers:
+      - failed payment
+      - double charged
+      - amount deducted
+      - payment issue
+    severity: high
+
+  # ---------------- VERIFICATION ----------------
+  - name: verification
+    categories: ["verification", "compliance"]
+    primary_triggers:
+      - verification
+      - documents
+      - identity
+    secondary_triggers:
+      - pending
+      - failed
+      - rejected
+    severity: medium
+
+  # ---------------- ORDER / REQUEST STATUS ----------------
+  - name: order_status
+    categories: ["order_status"]
+    primary_triggers:
+      - order
+      - status
+      - request
+      - tracking
+      - reference id
+    secondary_triggers:
+      - delayed
+      - pending
+      - still processing
+    severity: low
+
+  # ---------------- TROUBLESHOOTING ----------------
+  - name: troubleshooting
+    categories: ["troubleshooting"]
+    primary_triggers:
+      - not working
+      - error
+      - issue
+      - problem
+    secondary_triggers:
+      - stuck
+      - keeps loading
+      - slow
+      - broken
+      - retry didn’t help
+    edge_cases:
+      - intermittent
+      - timeout
+      - upload failed
+    severity: high
+
+  # ---------------- GENERAL / FALLBACK ----------------
+  - name: general
+    categories: ["general"]
+    primary_triggers:
+      - help
+      - support
+    secondary_triggers:
+      - not sure
+      - need guidance
+    severity: low
+
+# ---------------- ACTION CONFIGURATION ----------------
+actions:
+
+  create_ticket:
+    enabled: true
+    requires:
+      - explicit_user_request
+      - unresolved_after_guidance
+    min_severity: medium
+
+  update_record:
+    enabled: true
+    requires:
+      - status_related
+      - valid_reference_id
+
+  send_notification:
+    enabled: true
+    requires:
+      - system_issue
+      - high_severity
+      - repeated_failure

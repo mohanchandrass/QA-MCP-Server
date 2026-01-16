@@ -1,0 +1,117 @@
+[
+    {
+      "id": "k_account_login",
+      "category": "account_help",
+      "title": "Unable to Log In",
+      "content": "If a user is unable to log in, verify that the username and password are correct. Recommend using the password reset option if credentials are forgotten. If the issue persists after reset, escalate to support to check account status, lockouts, or authentication service issues."
+    },
+    {
+      "id": "k_account_locked",
+      "category": "account_help",
+      "title": "Account Locked or Suspended",
+      "content": "Accounts may be temporarily locked due to multiple failed login attempts, suspicious activity, or policy violations. Inform the user of the lock reason if available and guide them to wait for automatic unlock or contact support for manual review."
+    },
+    {
+      "id": "k_profile_update",
+      "category": "account_help",
+      "title": "Updating Profile or Personal Information",
+      "content": "Users can update personal or profile information from their account settings. Changes may require verification and can take time to reflect across systems. Advise contacting support if updates fail or are not reflected."
+    },
+    {
+      "id": "k_password_reset",
+      "category": "account_help",
+      "title": "Password Reset Not Working",
+      "content": "If password reset emails are not received, advise checking spam folders and verifying the registered email address. If the issue continues, escalate to support to manually initiate a reset."
+    },
+    {
+      "id": "k_service_downtime",
+      "category": "troubleshooting",
+      "title": "Service Downtime or Outage",
+      "content": "Temporary service outages may occur due to maintenance or unexpected failures. Inform users that most outages are resolved within the communicated timeframe. Suggest checking the status page or retrying later."
+    },
+    {
+      "id": "k_performance_issue",
+      "category": "troubleshooting",
+      "title": "Slow Performance or Errors",
+      "content": "Performance issues can result from high system load, network problems, or device limitations. Recommend refreshing, clearing cache, or retrying after some time. Escalate if the issue persists."
+    },
+    {
+      "id": "k_order_status",
+      "category": "order_status",
+      "title": "Checking Order or Request Status",
+      "content": "Users can track the status of their order or request from the dashboard or tracking page using the reference ID. If the status is not updating or unclear, support intervention may be required."
+    },
+    {
+      "id": "k_delayed_processing",
+      "category": "order_status",
+      "title": "Delayed Processing",
+      "content": "Processing delays can occur due to verification requirements, system load, or external dependencies. Inform users of expected timelines and escalate if delays exceed standard processing windows."
+    },
+    {
+      "id": "k_cancellation",
+      "category": "order_status",
+      "title": "Request or Order Cancellation",
+      "content": "Cancellations are allowed only within defined time limits or before processing begins. Advise users to initiate cancellation from their account or contact support if the option is unavailable."
+    },
+    {
+      "id": "k_refund_policy",
+      "category": "billing",
+      "title": "Refund and Reversal Policy",
+      "content": "Refunds are processed according to policy and may take several business days to reflect. Inform users of the expected timeline and required conditions. Escalate disputes for manual review."
+    },
+    {
+      "id": "k_payment_failed",
+      "category": "billing",
+      "title": "Payment Failure",
+      "content": "Payment failures may result from insufficient balance, expired payment methods, or network issues. Suggest retrying with updated payment details or using an alternative method."
+    },
+    {
+      "id": "k_billing_discrepancy",
+      "category": "billing",
+      "title": "Billing or Charge Discrepancy",
+      "content": "If a user reports unexpected charges, collect transaction details and escalate to billing support for investigation and resolution."
+    },
+    {
+      "id": "k_document_upload",
+      "category": "troubleshooting",
+      "title": "Document Upload Issues",
+      "content": "Document uploads may fail due to file size limits, unsupported formats, or connectivity issues. Advise users to check requirements and retry. Escalate if failures persist."
+    },
+    {
+      "id": "k_verification_pending",
+      "category": "verification",
+      "title": "Verification in Progress",
+      "content": "Verification processes may take time depending on volume and complexity. Inform users of standard timelines and reassure them that updates will be provided once completed."
+    },
+    {
+      "id": "k_verification_failed",
+      "category": "verification",
+      "title": "Verification Failed",
+      "content": "Verification may fail due to incorrect or incomplete information. Advise users to review submitted details and resubmit if allowed, or contact support for assistance."
+    },
+    {
+      "id": "k_notification_preferences",
+      "category": "account_help",
+      "title": "Notification Settings",
+      "content": "Users can manage notification preferences from their account settings. Changes may take time to take effect. Escalate if notifications are not delivered as configured."
+    },
+    {
+      "id": "k_data_privacy",
+      "category": "compliance",
+      "title": "Data Privacy and Security",
+      "content": "User data is handled according to applicable privacy and security policies. For concerns related to data access, correction, or deletion, guide users to the official privacy request process."
+    },
+    {
+      "id": "k_support_escalation",
+      "category": "general",
+      "title": "Contacting Support",
+      "content": "If an issue cannot be resolved through self-service steps, advise the user that a support ticket will be created or escalated for further investigation."
+    },
+    {
+      "id": "k_general_guidance",
+      "category": "general",
+      "title": "General Assistance",
+      "content": "For questions not covered by existing help topics, gather relevant details from the user and route the request to the appropriate support or action workflow."
+    }
+  ]
+  
