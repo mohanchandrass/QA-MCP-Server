@@ -1,3 +1,5 @@
+#Some tests may fail based on the strict conditions but would be acceptable as an output
+
 import asyncio
 import json
 import time
@@ -117,12 +119,13 @@ async def main():
     print(f"Failures        : {len(failures)}")
     print(f"Avg Latency     : {avg_latency:.2f} ms")
 
+
     if failures:
-        print("\n❌ ENTERPRISE READINESS: NEEDS IMPROVEMENT")
+        print("\nENTERPRISE READINESS: NEEDS IMPROVEMENT")
         for f in failures:
             print(f" - {f['id']}")
     else:
-        print("\n✅ ENTERPRISE READINESS: PASS")
+        print("\nENTERPRISE READINESS: PASS")
 
     print("\n=============================================================\n")
 
