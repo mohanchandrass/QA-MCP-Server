@@ -117,18 +117,52 @@ cd mcp-client
 pip install -r requirements.txt
 ```
 
+This step is mandatory for:
+- Gemini API integration
+- MCP client ↔ server communication
+
 ---
 
 ### Step 2: Set LLM API Key
 ```bash
 export GEMINI_API_KEY=your_api_key_here
 ```
+- Used only by the MCP client
+- The MCP server does not require an LLM key
 
 ---
 
 ### Step 3: Run the MCP Server
+Return to project root:
 ```bash
 cd ..
+```
+
+#### Option A: Docker (Recommended)
+```bash
+cd mcp-server
+docker build -t qa-mcp-server .
+
+docker run -p 8000:8000 \
+  -v $(pwd)/config:/app/config \
+  -v $(pwd)/data:/app/data \
+  qa-mcp-server
+```
+
+**Why mounting is required**
+- `/app/config` → persona, intents, actions (industry behavior)
+- `/app/data` → knowledge base
+- Enables hot-swappable industry configuration
+
+Endpoints:
+- MCP: http://localhost:8000/mcp
+- Health: http://localhost:8000/health
+
+#### Option B: Local Python
+```bash
+cd mcp-server
+pip install -r requirements.txt
+python qa_mcp_server.py
 ```
 
 ---
@@ -155,9 +189,13 @@ python qa_mcp_client.py
 ## 6. Configuration-Driven Design & Industry Switching
 
 All behavior is externalized:
-- `persona.yaml`
-- `intents.yaml`
-- `actions.yaml`
+- `persona.yaml` → industry, tone, search behavior
+- `intents.yaml` → intent taxonomy
+- `actions.yaml` → escalation, sampling, action rules
+
+To switch industries:
+- Replace configuration files only
+- No code changes required
 
 ---
 
@@ -165,6 +203,14 @@ All behavior is externalized:
 
 ### Core Principle
 The LLM never decides escalation.
+
+### Escalation Triggers
+- Explicit user request
+- High-severity intent
+- Low confidence / fallback
+- Repeated failures
+
+All rules are enforced deterministically from `actions.yaml`.
 
 ---
 
@@ -174,6 +220,11 @@ Used only for:
 - Natural language generation
 - Persona tone
 - Knowledge explanation
+
+The LLM cannot:
+- Trigger actions
+- Escalate independently
+- Override policy
 
 ---
 
@@ -190,23 +241,45 @@ Every interaction emits:
 
 ## 10. Output Examples
 
+**Screenshot 1: Knowledge Resolution Output**
+
+![](results/nres.png)
+
+**Screenshot 2: Escalation & Ticket Creation Output**
+
 ![](results/nres.png)
 
 ---
 
 ## 11. Extensibility & Upgrade Path
 
-Designed for future scaling and industry adaptation.
+This implementation uses a **basic knowledge base** and **baseline policies**.
+
+The system is intentionally designed to be extended:
+- Knowledge base can scale to thousands of documents
+- Policies can be tuned per industry
+- New actions (CRM, EHR, OSS/BSS) can be added
+- Additional LLM providers can be plugged in
+
+This aligns directly with the hackathon’s requirement for **industry-agnostic adaptability**.
 
 ---
 
 ## 12. Why This Design Works
-- Deterministic control
-- Safe LLM usage
-- Config-driven reuse
+- LLM handles most cases efficiently
+- Deterministic escalation guarantees safety
+- Config-only switching enables reuse
+- MCP-native architecture ensures clarity
 
 ---
 
 ## 13. Summary
 
-Production-grade MCP architecture with auditable control.
+This project demonstrates a **production-grade MCP architecture** where:
+- Control logic is deterministic
+- LLMs enhance UX without risk
+- Escalation is auditable
+- Industry behavior is configurable
+
+The solution fully satisfies the **Knowledge-Powered Q&A and Action Bot hackathon requirements**.
+
