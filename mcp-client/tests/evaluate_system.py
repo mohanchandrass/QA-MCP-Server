@@ -3,7 +3,7 @@ import json
 import time
 from fastmcp import Client
 
-MCP_SERVER_URL = "http://localhost:8001/mcp"
+MCP_SERVER_URL = "http://localhost:8000/mcp"
 
 # ---------------- RUN SINGLE TEST ----------------
 

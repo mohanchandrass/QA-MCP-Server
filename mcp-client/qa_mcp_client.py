@@ -1,5 +1,12 @@
 # Knowledge-Powered Q&A and Action Bot MCP Client (Gemini)
-# ENTERPRISE-SAFE – FINAL (HACKATHON-COMPLIANT, OBSERVABLE)
+#
+# Responsibilities:
+# - Query MCP knowledge resources
+# - Resolve intent via MCP tool
+# - Generate persona-driven responses using Gemini
+# - Enforce escalation & sampling policy from actions.yaml
+# - Trigger MCP action tools deterministically
+# - Emit full trace logs for evaluation
 
 import asyncio
 import os
@@ -9,8 +16,8 @@ from fastmcp import Client
 from google import genai
 from google.genai import types
 
-MCP_SERVER_URL = "http://localhost:8001/mcp"
-MAX_HISTORY_TURNS = 4  # aligns with conversation.max_history_turns
+MCP_SERVER_URL = "http://localhost:8000/mcp"
+MAX_HISTORY_TURNS = 4
 
 
 # ---------------- HELPERS ----------------
@@ -38,13 +45,42 @@ def select_fallback_knowledge(all_kb, intent_name):
     return []
 
 
-def is_explicit_escalation(user_query, persona_cfg):
+def should_escalate(user_query, intent, persona_cfg, actions_cfg, failure_count):
+    """
+    Deterministic escalation logic.
+    LLM NEVER decides escalation.
+    """
+    escalation_policy = actions_cfg.get("escalation_policy", {})
+    sampling_cfg = actions_cfg.get("sampling", {})
+    action_cfg = actions_cfg.get("actions", {}).get("create_ticket", {})
+
+    if not action_cfg.get("enabled", False):
+        return False
+
     indicators = (
         persona_cfg.get("escalation_phrases", {})
         .get("user_request_indicators", [])
     )
-    q = user_query.lower()
-    return any(p in q for p in indicators)
+
+    explicit_request = any(p in user_query.lower() for p in indicators)
+
+    # 1. Explicit request always escalates
+    if explicit_request and escalation_policy.get("explicit_request_always_escalates"):
+        return True
+
+    # 2. High severity intents escalate
+    if intent.get("severity") == "high":
+        return True
+
+    # 3. Low confidence escalates
+    if intent.get("confidence") == "fallback":
+        return True
+
+    # 4. Sampling / repeated failure escalation
+    if failure_count >= sampling_cfg.get("repeated_failure_limit", 2):
+        return True
+
+    return False
 
 
 # ---------------- MAIN ----------------
@@ -57,15 +93,18 @@ async def main():
     gemini = genai.Client(api_key=api_key)
     mcp = Client(MCP_SERVER_URL)
 
-    print("🚀 Knowledge MCP Client started")
+    print("Knowledge MCP Client started")
     print("Type 'exit', 'quit', or 'done' to end the session.\n")
 
     conversation_history = []
+    failure_count = 0
 
     async with mcp:
         await mcp.initialize()
 
+        # ---- Load configs once ----
         persona = read_resource_json(await mcp.read_resource("config://persona"))
+        actions_cfg = read_resource_json(await mcp.read_resource("config://actions"))
 
         while True:
             user_query = input("User: ").strip()
@@ -85,8 +124,47 @@ async def main():
 
             overall_start = time.time()
 
-            # ---------- Explicit Escalation ----------
-            if is_explicit_escalation(user_query, persona):
+            # ---------- Knowledge Search ----------
+            ks_start = time.time()
+            kb_res = await mcp.read_resource(f"knowledge://search/{user_query}")
+            knowledge = extract_knowledge_matches(kb_res)
+            trace["knowledge_matches"] = len(knowledge)
+            trace["timings_ms"]["knowledge_search"] = round(
+                (time.time() - ks_start) * 1000, 2
+            )
+
+            kb_all = extract_knowledge_matches(
+                await mcp.read_resource("knowledge://search/")
+            )
+
+            # ---------- Intent Resolution ----------
+            ir_start = time.time()
+            intent = json.loads(
+                (await mcp.call_tool(
+                    "resolve_intent",
+                    {"user_query": user_query}
+                )).content[0].text
+            )
+            trace["intent"] = intent
+            trace["confidence"] = intent.get("confidence")
+            trace["timings_ms"]["intent_resolution"] = round(
+                (time.time() - ir_start) * 1000, 2
+            )
+
+            # ---------- Failure Tracking ----------
+            if intent.get("confidence") == "fallback":
+                failure_count += 1
+            else:
+                failure_count = 0
+
+            # ---------- Escalation Check----------
+            if should_escalate(
+                user_query,
+                intent,
+                persona,
+                actions_cfg,
+                failure_count
+            ):
                 action_start = time.time()
 
                 await mcp.call_tool(
@@ -113,34 +191,7 @@ async def main():
                 print("\n[TRACE]")
                 print(json.dumps(trace, indent=2))
                 print("-" * 60)
-                break  # enterprise-standard behavior
-
-            # ---------- Knowledge Search ----------
-            ks_start = time.time()
-            kb_res = await mcp.read_resource(f"knowledge://search/{user_query}")
-            knowledge = extract_knowledge_matches(kb_res)
-            trace["knowledge_matches"] = len(knowledge)
-            trace["timings_ms"]["knowledge_search"] = round(
-                (time.time() - ks_start) * 1000, 2
-            )
-
-            kb_all = extract_knowledge_matches(
-                await mcp.read_resource("knowledge://search/")
-            )
-
-            # ---------- Intent Resolution ----------
-            ir_start = time.time()
-            intent = json.loads(
-                (await mcp.call_tool(
-                    "resolve_intent",
-                    {"user_query": user_query}
-                )).content[0].text
-            )
-            trace["intent"] = intent
-            trace["confidence"] = intent.get("confidence", "unknown")
-            trace["timings_ms"]["intent_resolution"] = round(
-                (time.time() - ir_start) * 1000, 2
-            )
+                break
 
             # ---------- Knowledge Fallback ----------
             if not knowledge:
@@ -151,15 +202,17 @@ async def main():
             else:
                 trace["fallback_used"] = False
 
-            # ---------- Update Conversation History ----------
+            # ---------- Context Window ----------
             conversation_history.append({"role": "user", "text": user_query})
             conversation_history = conversation_history[-MAX_HISTORY_TURNS:]
 
-            # ---------- Build Prompt ----------
+            # ---------- Prompt Assembly----------
+            persona_llm = persona.get("persona", {})
             prompt = (
                 "You are an enterprise support assistant.\n\n"
-                f"Persona Configuration:\n{json.dumps(persona, indent=2)}\n\n"
-                f"Relevant Knowledge:\n{json.dumps(knowledge, indent=2)}\n\n"
+                f"Tone: {persona_llm.get('tone')}\n"
+                f"Style: {persona_llm.get('style')}\n\n"
+                f"Relevant Knowledge:\n{json.dumps(knowledge[:1], indent=2)}\n\n"
                 "Conversation Context:\n"
             )
 

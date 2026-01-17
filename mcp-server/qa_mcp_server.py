@@ -1,30 +1,46 @@
 # Knowledge-Powered Q&A and Action Bot MCP Server
-# ENTERPRISE-SAFE – HACKATHON-COMPLIANT FINAL
 #
-# This server exposes:
-# - Knowledge search as MCP resources
-# - Persona, intents, and actions from external configs
-# - Intent resolution as a tool
-# - Action tools for escalation and system updates
+# This MCP server:
+# - Exposes knowledge search as MCP resources
+# - Exposes persona, intents, and actions from external YAML configs
+# - Resolves intent via deterministic rules (no LLM in server)
+# - Executes actions ONLY when explicitly called by the client
 #
 # Industry switching is achieved by swapping config files only.
+# All conversation, escalation, and confidence logic is enforced by the MCP client.
 
 from fastmcp import FastMCP
 from starlette.responses import PlainTextResponse
-import json, yaml, time, re
 from pathlib import Path
+import json
+import yaml
+import time
+import re
 
 # ---------------- INITIALIZATION ----------------
 
 mcp = FastMCP("knowledge-action-bot")
 
 BASE_CONFIG_PATH = Path("config")
+DATA_PATH = Path("data")
 
-PERSONA_CFG = yaml.safe_load(open(BASE_CONFIG_PATH / "persona.yaml"))
-INTENTS_CFG = yaml.safe_load(open(BASE_CONFIG_PATH / "intents.yaml"))
-ACTIONS_CFG = yaml.safe_load(open(BASE_CONFIG_PATH / "actions.yaml"))
+def load_yaml(path: Path) -> dict:
+    if not path.exists():
+        raise FileNotFoundError(f"Missing config file: {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
 
-KNOWLEDGE = json.load(open("data/knowledge.json"))
+def load_json(path: Path) -> dict:
+    if not path.exists():
+        raise FileNotFoundError(f"Missing data file: {path}")
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+PERSONA_CFG = load_yaml(BASE_CONFIG_PATH / "persona.yaml")
+INTENTS_CFG = load_yaml(BASE_CONFIG_PATH / "intents.yaml")
+ACTIONS_CFG = load_yaml(BASE_CONFIG_PATH / "actions.yaml")
+
+KNOWLEDGE = load_json(DATA_PATH / "knowledge.json")
 
 # ---------------- SEARCH CONFIG (FROM PERSONA) ----------------
 
@@ -33,25 +49,27 @@ SEARCH_MODE = SEARCH_CFG.get("mode", "keyword")
 
 TEXT_CFG = SEARCH_CFG.get("text_processing", {})
 STOPWORDS = set(TEXT_CFG.get("stopwords", []))
-MIN_TOKEN_MATCH = TEXT_CFG.get("min_token_match", 1)
+MIN_TOKEN_MATCH = int(TEXT_CFG.get("min_token_match", 1))
 
 # ---------------- TEXT NORMALIZATION ----------------
 
-def tokenize(text: str):
+TOKEN_PATTERN = re.compile(r"[a-zA-Z]+")
+
+def tokenize(text: str) -> set[str]:
     return {
-        t for t in re.findall(r"[a-zA-Z]+", text.lower())
+        t for t in TOKEN_PATTERN.findall(text.lower())
         if t not in STOPWORDS
     }
 
 # ---------------- KNOWLEDGE NORMALIZATION ----------------
 
 NORMALIZED_KNOWLEDGE = []
-for k in KNOWLEDGE:
-    combined = f"{k['title']} {k['content']}"
+for entry in KNOWLEDGE:
+    combined_text = f"{entry.get('title', '')} {entry.get('content', '')}"
     NORMALIZED_KNOWLEDGE.append({
-        **k,
-        "text": combined.lower(),
-        "tokens": tokenize(combined)
+        **entry,
+        "text": combined_text.lower(),
+        "tokens": tokenize(combined_text)
     })
 
 # ---------------- INTENT INDEX ----------------
@@ -89,7 +107,6 @@ def keyword_search(query: str):
     q_tokens = tokenize(query)
     if not q_tokens:
         return []
-
     return [
         k for k in NORMALIZED_KNOWLEDGE
         if len(q_tokens & k["tokens"]) >= MIN_TOKEN_MATCH
@@ -98,12 +115,10 @@ def keyword_search(query: str):
 def semantic_search(query: str):
     q_tokens = tokenize(query)
     scored = []
-
     for k in NORMALIZED_KNOWLEDGE:
         score = len(q_tokens & k["tokens"])
         if score > 0:
             scored.append((score, k))
-
     scored.sort(reverse=True, key=lambda x: x[0])
     return [k for _, k in scored]
 
@@ -199,7 +214,9 @@ async def resolve_intent(user_query: str) -> dict:
     }
 
 # ---------------- ACTION TOOLS ----------------
-# NOTE: Execution gating is controlled by actions.yaml
+# NOTE:
+# - This server does NOT decide WHEN actions occur
+# - It ONLY executes actions when explicitly invoked by the client
 
 @mcp.tool()
 async def create_ticket(issue: str) -> dict:
@@ -217,4 +234,4 @@ async def send_notification(channel: str, payload: str) -> dict:
 
 if __name__ == "__main__":
     print("Starting Knowledge-Powered MCP Server...")
-    mcp.run(transport="http", host="0.0.0.0", port=8001)
+    mcp.run(transport="http", host="0.0.0.0", port=8000)
