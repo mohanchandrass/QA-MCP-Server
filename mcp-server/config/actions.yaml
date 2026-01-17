@@ -1,0 +1,49 @@
+# Action execution + conversation control
+# Defines when actions occur and how conversations end.
+
+# ---------------- DECISION POLICY ----------------
+decision_policy:
+  knowledge_first: true
+  require_explicit_action_request: true
+  default_fallback_response: provide_guidance
+  expose_escalation_to_user: false
+
+# ---------------- CONVERSATION POLICY ----------------
+conversation:
+  max_history_turns: 4
+  behavior:
+    maintain_context: true
+    reset_on_escalation: true
+
+# ---------------- ESCALATION POLICY ----------------
+escalation_policy:
+  explicit_request_always_escalates: true
+  require_prior_attempts: false
+  end_session_on_escalation: true
+
+# ---------------- SAMPLING / CONFIDENCE ----------------
+sampling:
+  confidence_threshold: 0.75
+  repeated_failure_limit: 2
+  repeated_failure_phrases:
+    - still not working
+    - already tried
+    - same issue again
+    - nothing changed
+
+# ---------------- ACTION CONFIGURATION ----------------
+actions:
+
+  create_ticket:
+    enabled: true
+    requires: [explicit_user_request, unresolved_after_guidance]
+    min_severity: medium
+
+  update_record:
+    enabled: true
+    requires: [status_related, valid_reference_id]
+
+  send_notification:
+    enabled: true
+    requires: [system_issue, high_severity, repeated_failure]
+

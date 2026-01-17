@@ -1,9 +1,81 @@
-industry: banking   # change only this for industry switching
+industry: banking   # change ONLY this to switch industry
 
+# ---------------- SEARCH CONFIGURATION ----------------
+search:
+  mode: keyword        # keyword | semantic | hybrid
+
+  semantic:
+    enabled: false
+    provider: llm
+    max_candidates: 5
+
+  text_processing:
+    stopwords:
+      - i
+      - to
+      - my
+      - is
+      - the
+      - and
+      - a
+      - an
+      - in
+      - of
+      - for
+      - with
+
+    min_token_match: 2
+
+# ---------------- PERSONA (ALL LLM LOGIC LIVES HERE) ----------------
 persona:
+  role: enterprise_support_assistant
+
   tone: formal
   verbosity: concise
   style: instructional
+
+  response_structure:
+    opening_sentence: true
+    bullet_points_if_applicable: true
+    max_bullets: 5
+
+  formatting_rules:
+    - Start with a single short acknowledgement sentence
+    - Use bullet points only when actionable steps are present
+    - If no steps exist, respond with a single complete sentence
+    - Do not use bullet points for escalation-only messages
+    - Do not state that an action will occur unless it has been executed
+    - For escalation requests without executed actions, respond with acknowledgment and request for clarification only
+    - Use conditional language when escalation is possible but not confirmed
+
+  constraints:
+    - Use only provided knowledge
+    - Do not mention internal systems or tools
+    - Do not expose escalation or confidence logic
+    - Do not speculate beyond knowledge
+    - Ask for clarification if information is insufficient
+    - Refuse requests outside supported domain politely
+
+  escalation_phrases:
+    user_request_indicators:
+      - human
+      - agent
+      - representative
+      - talk to someone
+      - contact support
+      - raise a ticket
+
+  escalation_handling:
+    unexecuted_action_response:
+      style: acknowledgment_only
+      allow_action_language: false
+
+  out_of_scope_phrases:
+    - legal advice
+    - medical diagnosis
+    - bypass verification
+    - hack
+    - exploit
 
 # ---------------- DECISION POLICY ----------------
 decision_policy:
@@ -12,16 +84,34 @@ decision_policy:
   default_fallback_response: provide_guidance
   expose_escalation_to_user: false
 
+# ---------------- CONVERSATION POLICY ----------------
+conversation:
+  max_history_turns: 4
+  behavior:
+    maintain_context: true
+    reset_on_escalation: true
+
+# ---------------- ESCALATION POLICY ----------------
+escalation_policy:
+  explicit_request_always_escalates: true
+  require_prior_attempts: false
+  end_session_on_escalation: true
+
+# ---------------- SAMPLING / CONFIDENCE ----------------
 sampling:
   confidence_threshold: 0.75
   repeated_failure_limit: 2
+  repeated_failure_phrases:
+    - still not working
+    - already tried
+    - same issue again
+    - nothing changed
 
 # ---------------- INTENT RESOLUTION ----------------
 intent_resolution:
   strategy: hybrid
   fallback_intent: general
 
-  # Explicit priority to resolve overlaps (higher wins)
   intent_priority:
     - billing
     - account_help
@@ -30,7 +120,6 @@ intent_resolution:
     - troubleshooting
     - general
 
-  # Security guardrails (pre-intent)
   security_triggers:
     force_general:
       - ignore rules
@@ -39,101 +128,53 @@ intent_resolution:
       - bypass
       - superuser
 
+# ---------------- INTENTS ----------------
 intents:
 
-  # ---------------- ACCOUNT & ACCESS ----------------
   - name: account_help
-    categories: ["account_help"]
-    primary_triggers:
-      - login
-      - password
-      - account
-      - access
-      - locked
-      - suspended
+    categories: [account_help]
+    primary_triggers: [login, password, account, access, locked, suspended]
     secondary_triggers:
       - cannot sign in
       - forgot credentials
       - unable to access
       - not letting me in
-      - create a ticket
-      - raise a ticket
-      - contact support for login
     severity: medium
 
-  # ---------------- BILLING ----------------
   - name: billing
-    categories: ["billing"]
-    primary_triggers:
-      - payment
-      - refund
-      - charged
-      - billing
-      - deducted
+    categories: [billing]
+    primary_triggers: [payment, refund, charged, billing, deducted]
     secondary_triggers:
       - failed payment
       - double charged
       - amount deducted
-      - payment issue
+    requires_fields: [transaction_id]
     severity: high
 
-  # ---------------- VERIFICATION ----------------
   - name: verification
-    categories: ["verification", "compliance"]
-    primary_triggers:
-      - verification
-      - documents
-      - identity
-    secondary_triggers:
-      - pending
-      - failed
-      - rejected
+    categories: [verification, compliance]
+    primary_triggers: [verification, documents, identity]
+    secondary_triggers: [pending, failed, rejected]
     severity: medium
 
-  # ---------------- ORDER / REQUEST STATUS ----------------
   - name: order_status
-    categories: ["order_status"]
-    primary_triggers:
-      - order
-      - status
-      - request
-      - tracking
-      - reference id
-    secondary_triggers:
-      - delayed
-      - pending
-      - still processing
+    categories: [order_status]
+    primary_triggers: [order, status, request, tracking, reference id]
+    secondary_triggers: [delayed, pending, still processing]
+    requires_fields: [reference_id]
     severity: low
 
-  # ---------------- TROUBLESHOOTING ----------------
   - name: troubleshooting
-    categories: ["troubleshooting"]
-    primary_triggers:
-      - not working
-      - error
-      - issue
-      - problem
-    secondary_triggers:
-      - stuck
-      - keeps loading
-      - slow
-      - broken
-      - retry didn’t help
-    edge_cases:
-      - intermittent
-      - timeout
-      - upload failed
+    categories: [troubleshooting]
+    primary_triggers: [not working, error, issue, problem]
+    secondary_triggers: [stuck, slow, broken, retry didn’t help]
+    edge_cases: [intermittent, timeout, upload failed]
     severity: high
 
-  # ---------------- GENERAL / FALLBACK ----------------
   - name: general
-    categories: ["general"]
-    primary_triggers:
-      - help
-      - support
-    secondary_triggers:
-      - not sure
-      - need guidance
+    categories: [general]
+    primary_triggers: [help, support]
+    secondary_triggers: [not sure, need guidance]
     severity: low
 
 # ---------------- ACTION CONFIGURATION ----------------
@@ -141,20 +182,13 @@ actions:
 
   create_ticket:
     enabled: true
-    requires:
-      - explicit_user_request
-      - unresolved_after_guidance
+    requires: [explicit_user_request, unresolved_after_guidance]
     min_severity: medium
 
   update_record:
     enabled: true
-    requires:
-      - status_related
-      - valid_reference_id
+    requires: [status_related, valid_reference_id]
 
   send_notification:
     enabled: true
-    requires:
-      - system_issue
-      - high_severity
-      - repeated_failure
+    requires: [system_issue, high_severity, repeated_failure]

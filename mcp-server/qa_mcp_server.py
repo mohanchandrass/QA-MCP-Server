@@ -1,66 +1,135 @@
 # Knowledge-Powered Q&A and Action Bot MCP Server
-# ENTERPRISE-SAFE – FINAL
+# ENTERPRISE-SAFE – HACKATHON-COMPLIANT FINAL
+#
+# This server exposes:
+# - Knowledge search as MCP resources
+# - Persona, intents, and actions from external configs
+# - Intent resolution as a tool
+# - Action tools for escalation and system updates
+#
+# Industry switching is achieved by swapping config files only.
 
 from fastmcp import FastMCP
 from starlette.responses import PlainTextResponse
-import json, yaml, time
+import json, yaml, time, re
+from pathlib import Path
 
 # ---------------- INITIALIZATION ----------------
 
 mcp = FastMCP("knowledge-action-bot")
 
-CONFIG = yaml.safe_load(open("config/industry.yaml"))
+BASE_CONFIG_PATH = Path("config")
+
+PERSONA_CFG = yaml.safe_load(open(BASE_CONFIG_PATH / "persona.yaml"))
+INTENTS_CFG = yaml.safe_load(open(BASE_CONFIG_PATH / "intents.yaml"))
+ACTIONS_CFG = yaml.safe_load(open(BASE_CONFIG_PATH / "actions.yaml"))
+
 KNOWLEDGE = json.load(open("data/knowledge.json"))
 
-# Normalize knowledge once (performance)
-NORMALIZED_KNOWLEDGE = [
-    {
-        **k,
-        "text": f"{k['title']} {k['content']}".lower()
+# ---------------- SEARCH CONFIG (FROM PERSONA) ----------------
+
+SEARCH_CFG = PERSONA_CFG.get("search", {})
+SEARCH_MODE = SEARCH_CFG.get("mode", "keyword")
+
+TEXT_CFG = SEARCH_CFG.get("text_processing", {})
+STOPWORDS = set(TEXT_CFG.get("stopwords", []))
+MIN_TOKEN_MATCH = TEXT_CFG.get("min_token_match", 1)
+
+# ---------------- TEXT NORMALIZATION ----------------
+
+def tokenize(text: str):
+    return {
+        t for t in re.findall(r"[a-zA-Z]+", text.lower())
+        if t not in STOPWORDS
     }
-    for k in KNOWLEDGE
-]
 
-# Pre-index intents (deterministic, no actions here)
+# ---------------- KNOWLEDGE NORMALIZATION ----------------
+
+NORMALIZED_KNOWLEDGE = []
+for k in KNOWLEDGE:
+    combined = f"{k['title']} {k['content']}"
+    NORMALIZED_KNOWLEDGE.append({
+        **k,
+        "text": combined.lower(),
+        "tokens": tokenize(combined)
+    })
+
+# ---------------- INTENT INDEX ----------------
+
 INTENT_INDEX = []
-for intent in CONFIG["intents"]:
-    triggers = []
-    triggers.extend(intent.get("primary_triggers", []))
-    triggers.extend(intent.get("secondary_triggers", []))
-
+for intent in INTENTS_CFG.get("intents", []):
+    triggers = (
+        intent.get("primary_triggers", [])
+        + intent.get("secondary_triggers", [])
+    )
     INTENT_INDEX.append({
         "name": intent["name"],
-        "categories": intent.get("categories", []),
         "triggers": [t.lower() for t in triggers],
         "severity": intent.get("severity", "low")
     })
 
-FALLBACK_INTENT = CONFIG.get("intent_resolution", {}).get(
-    "fallback_intent", "general"
+INTENT_RESOLUTION_CFG = INTENTS_CFG.get("intent_resolution", {})
+FALLBACK_INTENT = INTENT_RESOLUTION_CFG.get("fallback_intent", "general")
+
+SECURITY_TRIGGERS = (
+    INTENT_RESOLUTION_CFG
+    .get("security_triggers", {})
+    .get("force_general", [])
 )
 
-# ---------------- HEALTH CHECK ----------------
+# ---------------- HEALTH ----------------
 
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(request):
     return PlainTextResponse("OK")
 
+# ---------------- SEARCH IMPLEMENTATIONS ----------------
+
+def keyword_search(query: str):
+    q_tokens = tokenize(query)
+    if not q_tokens:
+        return []
+
+    return [
+        k for k in NORMALIZED_KNOWLEDGE
+        if len(q_tokens & k["tokens"]) >= MIN_TOKEN_MATCH
+    ]
+
+def semantic_search(query: str):
+    q_tokens = tokenize(query)
+    scored = []
+
+    for k in NORMALIZED_KNOWLEDGE:
+        score = len(q_tokens & k["tokens"])
+        if score > 0:
+            scored.append((score, k))
+
+    scored.sort(reverse=True, key=lambda x: x[0])
+    return [k for _, k in scored]
+
+def hybrid_search(query: str):
+    merged = {}
+    for k in keyword_search(query):
+        merged[k["id"]] = k
+    for k in semantic_search(query):
+        merged.setdefault(k["id"], k)
+    return list(merged.values())
+
 # ---------------- RESOURCES ----------------
 
 @mcp.resource("knowledge://search/{query}")
 async def search_knowledge(query: str) -> dict:
-    """Fast keyword-based knowledge search"""
     start = time.time()
-    q = query.lower()
 
-    results = [
-        k for k in NORMALIZED_KNOWLEDGE
-        if q in k["text"]
-    ]
-
-    duration_ms = round((time.time() - start) * 1000, 2)
+    if SEARCH_MODE == "semantic":
+        results = semantic_search(query)
+    elif SEARCH_MODE == "hybrid":
+        results = hybrid_search(query)
+    else:
+        results = keyword_search(query)
 
     return {
+        "search_mode": SEARCH_MODE,
         "matches": [
             {
                 "id": r["id"],
@@ -70,16 +139,8 @@ async def search_knowledge(query: str) -> dict:
             }
             for r in results
         ],
-        "response_time_ms": duration_ms
+        "response_time_ms": round((time.time() - start) * 1000, 2)
     }
-
-@mcp.resource("config://persona")
-async def get_persona() -> dict:
-    return CONFIG["persona"]
-
-@mcp.resource("config://intents")
-async def get_intents() -> dict:
-    return CONFIG["intents"]
 
 @mcp.resource("knowledge://search/")
 async def search_all_knowledge() -> dict:
@@ -96,16 +157,31 @@ async def search_all_knowledge() -> dict:
         "response_time_ms": 0
     }
 
+@mcp.resource("config://persona")
+async def get_persona() -> dict:
+    return PERSONA_CFG
 
-# ---------------- INTENT RESOLUTION ----------------
+@mcp.resource("config://intents")
+async def get_intents() -> dict:
+    return INTENTS_CFG
+
+@mcp.resource("config://actions")
+async def get_actions() -> dict:
+    return ACTIONS_CFG
+
+# ---------------- INTENT TOOL ----------------
 
 @mcp.tool()
 async def resolve_intent(user_query: str) -> dict:
-    """
-    Deterministic intent resolution.
-    NO actions are decided here.
-    """
     q = user_query.lower()
+
+    for phrase in SECURITY_TRIGGERS:
+        if phrase in q:
+            return {
+                "intent": "general",
+                "severity": "low",
+                "confidence": "security_override"
+            }
 
     for intent in INTENT_INDEX:
         for trigger in intent["triggers"]:
@@ -123,31 +199,21 @@ async def resolve_intent(user_query: str) -> dict:
     }
 
 # ---------------- ACTION TOOLS ----------------
+# NOTE: Execution gating is controlled by actions.yaml
 
 @mcp.tool()
 async def create_ticket(issue: str) -> dict:
-    return {
-        "status": "created",
-        "message": f"Support ticket created for issue: {issue}"
-    }
+    return {"status": "created", "issue": issue}
 
 @mcp.tool()
 async def update_record(record_id: str, fields: dict) -> dict:
-    return {
-        "status": "updated",
-        "record_id": record_id,
-        "fields": fields
-    }
+    return {"status": "updated", "record_id": record_id, "fields": fields}
 
 @mcp.tool()
 async def send_notification(channel: str, payload: str) -> dict:
-    return {
-        "status": "sent",
-        "channel": channel,
-        "payload": payload
-    }
+    return {"status": "sent", "channel": channel, "payload": payload}
 
-# ---------------- SERVER ENTRY ----------------
+# ---------------- ENTRY ----------------
 
 if __name__ == "__main__":
     print("Starting Knowledge-Powered MCP Server...")

@@ -1,0 +1,73 @@
+# Intent taxonomy and resolution logic
+# Used by the resolve_intent MCP tool.
+
+
+# ---------------- INTENT RESOLUTION ----------------
+intent_resolution:
+  strategy: hybrid
+  fallback_intent: general
+
+  intent_priority:
+    - billing
+    - account_help
+    - verification
+    - order_status
+    - troubleshooting
+    - general
+
+  security_triggers:
+    force_general:
+      - ignore rules
+      - override
+      - admin access
+      - bypass
+      - superuser
+
+# ---------------- INTENTS ----------------
+intents:
+
+  - name: account_help
+    categories: [account_help]
+    primary_triggers: [login, password, account, access, locked, suspended]
+    secondary_triggers:
+      - cannot sign in
+      - forgot credentials
+      - unable to access
+      - not letting me in
+    severity: medium
+
+  - name: billing
+    categories: [billing]
+    primary_triggers: [payment, refund, charged, billing, deducted]
+    secondary_triggers:
+      - failed payment
+      - double charged
+      - amount deducted
+    requires_fields: [transaction_id]
+    severity: high
+
+  - name: verification
+    categories: [verification, compliance]
+    primary_triggers: [verification, documents, identity]
+    secondary_triggers: [pending, failed, rejected]
+    severity: medium
+
+  - name: order_status
+    categories: [order_status]
+    primary_triggers: [order, status, request, tracking, reference id]
+    secondary_triggers: [delayed, pending, still processing]
+    requires_fields: [reference_id]
+    severity: low
+
+  - name: troubleshooting
+    categories: [troubleshooting]
+    primary_triggers: [not working, error, issue, problem]
+    secondary_triggers: [stuck, slow, broken, retry didn’t help]
+    edge_cases: [intermittent, timeout, upload failed]
+    severity: high
+
+  - name: general
+    categories: [general]
+    primary_triggers: [help, support]
+    secondary_triggers: [not sure, need guidance]
+    severity: low

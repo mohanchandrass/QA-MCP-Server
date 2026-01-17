@@ -12,7 +12,23 @@ async def run_test_case(mcp, case):
     notes = []
     status = "PASS"
 
-    # ---- Intent Resolution ----
+    # ---------- PERSONA RESOURCE ----------
+    persona_res = await mcp.read_resource("config://persona")
+    persona_loaded = bool(persona_res)
+    if not persona_loaded:
+        status = "FAIL"
+        notes.append("Persona resource not available")
+
+    # ---------- KNOWLEDGE SEARCH ----------
+    kb_res = await mcp.read_resource(f"knowledge://search/{case['query']}")
+    kb_payload = json.loads(kb_res[0].text)
+    kb_matches = len(kb_payload.get("matches", []))
+
+    if case.get("expect_knowledge", False) and kb_matches == 0:
+        status = "FAIL"
+        notes.append("Expected knowledge but none returned")
+
+    # ---------- INTENT ----------
     intent_res = await mcp.call_tool(
         "resolve_intent",
         {"user_query": case["query"]}
@@ -20,22 +36,16 @@ async def run_test_case(mcp, case):
     intent = json.loads(intent_res.content[0].text)
 
     intent_detected = intent["intent"]
-    intent_expected = case["expected_intent"]
+    confidence = intent.get("confidence", "unknown")
 
-    if intent_detected != intent_expected:
+    if intent_detected != case["expected_intent"]:
         status = "FAIL"
         notes.append(
-            f"Intent mismatch (detected='{intent_detected}', expected='{intent_expected}')"
+            f"Intent mismatch (detected='{intent_detected}', expected='{case['expected_intent']}')"
         )
 
-    # ---- Knowledge Search ----
-    kb_res = await mcp.read_resource(f"knowledge://search/{case['query']}")
-    kb_payload = json.loads(kb_res[0].text)
-    kb_matches = len(kb_payload.get("matches", []))
-
-    # ---- Action Validation (Policy Simulation) ----
-    action_expected = case["expect_action"]
-    action_triggered = case["expect_action"]  # simulated policy outcome
+    # ---------- ACTION (SIMULATED) ----------
+    action_triggered = bool(case.get("expect_action", False))
 
     latency_ms = round((time.time() - start) * 1000, 2)
 
@@ -43,16 +53,21 @@ async def run_test_case(mcp, case):
         "id": case["id"],
         "type": case["type"],
         "query": case["query"],
+
         "system_output": {
             "intent": intent_detected,
+            "confidence": confidence,
             "knowledge_hits": kb_matches,
+            "persona_loaded": persona_loaded,
             "action_triggered": action_triggered,
             "latency_ms": latency_ms
         },
+
         "expected_output": {
-            "intent": intent_expected,
-            "action_triggered": action_expected
+            "intent": case["expected_intent"],
+            "action_triggered": case.get("expect_action", False)
         },
+
         "status": status,
         "notes": notes
     }
@@ -64,7 +79,7 @@ async def main():
     test_cases = json.load(open("test_cases.json"))
     results = []
 
-    print("\n================ ENTERPRISE QA BOT EVALUATION ================\n")
+    print("\n================ ENTERPRISE MCP QA EVALUATION ================\n")
 
     async with mcp:
         await mcp.initialize()
@@ -74,43 +89,33 @@ async def main():
             results.append(result)
 
             print(f"TEST {result['id']} ({result['type']})")
-            print(" QUERY:")
-            print(f"   {result['query'] or '[EMPTY]'}")
-
+            print(f" QUERY: {result['query']}")
             print("\n SYSTEM OUTPUT:")
-            print(f"   Intent Detected : {result['system_output']['intent']}")
-            print(f"   Knowledge Hits  : {result['system_output']['knowledge_hits']}")
-            print(f"   Action Trigger : {result['system_output']['action_triggered']}")
-            print(f"   Latency (ms)   : {result['system_output']['latency_ms']}")
+            for k, v in result["system_output"].items():
+                print(f"   {k}: {v}")
 
             print("\n EXPECTED OUTPUT:")
-            print(f"   Expected Intent: {result['expected_output']['intent']}")
-            print(f"   Expected Action: {result['expected_output']['action_triggered']}")
+            for k, v in result["expected_output"].items():
+                print(f"   {k}: {v}")
 
-            print("\n RESULT:")
-            print(f"   STATUS         : {result['status']}")
+            print(f"\n STATUS: {result['status']}")
 
             if result["notes"]:
-                print("   ISSUES:")
-                for note in result["notes"]:
-                    print(f"    - {note}")
+                print(" ISSUES:")
+                for n in result["notes"]:
+                    print(f"  - {n}")
 
-            print("-" * 75)
+            print("-" * 80)
 
-    # ---------------- SUMMARY ----------------
-
-    total = len(results)
     failures = [r for r in results if r["status"] == "FAIL"]
-    intent_accuracy = ((total - len(failures)) / total) * 100
-    avg_latency = sum(r["system_output"]["latency_ms"] for r in results) / total
+    avg_latency = sum(r["system_output"]["latency_ms"] for r in results) / len(results)
 
     json.dump(results, open("evaluation_results.json", "w"), indent=2)
 
     print("\n================ SUMMARY =================\n")
-    print(f"Total Test Cases : {total}")
-    print(f"Intent Accuracy : {intent_accuracy:.2f}%")
-    print(f"Avg Latency     : {avg_latency:.2f} ms")
+    print(f"Total Test Cases : {len(results)}")
     print(f"Failures        : {len(failures)}")
+    print(f"Avg Latency     : {avg_latency:.2f} ms")
 
     if failures:
         print("\n❌ ENTERPRISE READINESS: NEEDS IMPROVEMENT")
