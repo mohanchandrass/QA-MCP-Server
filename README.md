@@ -79,8 +79,7 @@ User
 qa-mcp/
 ├── mcp-client/
 │   ├── qa_mcp_client.py
-│   ├── requirements.txt
-│   └── tests/
+│   └──  requirements.txt
 └── mcp-server/
     ├── qa_mcp_server.py
     ├── Dockerfile
