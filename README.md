@@ -11,7 +11,7 @@
 3. [Repository Structure](#3-repository-structure)  
 4. [Execution Guide (Copy–Paste Ready)](#4-execution-guide-copypaste-ready)  
    - [Prerequisites](#prerequisites)  
-   - [Step-by-Step Execution](#step-by-step-execution)  
+   - [Step-by-Step Execution](#step-0-navigate-to-project-root)  
 5. [Runtime Flow (End-to-End)](#5-runtime-flow-end-to-end)  
 6. [Configuration-Driven Design & Industry Switching](#6-configuration-driven-design--industry-switching)  
 7. [Decision Logic & Escalation Policy](#7-decision-logic--escalation-policy)  
@@ -36,7 +36,7 @@ The system is designed to:
 - Trigger actions (e.g., ticket creation) in a controlled, auditable manner
 - Support instant industry switching by swapping configuration files only
 
-All decision-making logic is **configuration-driven**, while the **LLM is strictly limited to language generation**.
+All decision-making logic is **configuration-driven**, while the **LLM is strictly limited to language generation**. This ensures enterprise safety, predictability, and auditability.
 
 ---
 
@@ -50,24 +50,25 @@ The system consists of **two decoupled components**.
   - `config://persona`
   - `config://intents`
   - `config://actions`
-- Resolves intent using deterministic rules
+- Resolves intent using deterministic rules (no LLM in server)
 - Executes actions only when explicitly invoked
 - Stateless and reproducible
 
 ### MCP Client (LLM-Integrated)
 - Queries MCP resources
 - Uses Gemini for natural language generation
-- Enforces escalation and sampling policies
+- Enforces escalation and sampling policies from configuration
 - Explicitly triggers MCP action tools
-- Emits full trace logs
+- Emits full trace logs for observability
 
 ### High-Level Flow
 ```
 User
  └─> MCP Client (LLM + Policy Enforcement)
-      ├─> knowledge://search
-      ├─> resolve_intent
-      └─> create_ticket (if required)
+      ├─> MCP Resource: knowledge://search
+      ├─> MCP Tool: resolve_intent
+      ├─> Decision Logic (from actions.yaml)
+      └─> MCP Tool: create_ticket (if required)
            └─> MCP Server
 ```
 
@@ -101,106 +102,84 @@ qa-mcp/
 - Docker
 - Gemini API Key
 
-### Step-by-Step Execution
+---
 
-#### Step 0: Navigate to Project Root
+### Step 0: Navigate to Project Root
 ```bash
 cd qa-mcp
 ```
 
-#### Step 1: Install MCP Client Dependencies
+---
+
+### Step 1: Install MCP Client Dependencies (Required)
 ```bash
 cd mcp-client
 pip install -r requirements.txt
 ```
 
-#### Step 2: Set LLM API Key
+---
+
+### Step 2: Set LLM API Key
 ```bash
 export GEMINI_API_KEY=your_api_key_here
 ```
 
-#### Step 3: Run the MCP Server
+---
 
-**Docker (Recommended)**
+### Step 3: Run the MCP Server
 ```bash
-cd mcp-server
-docker build -t qa-mcp-server .
-
-docker run -p 8000:8000 \
-  -v $(pwd)/config:/app/config \
-  -v $(pwd)/data:/app/data \
-  qa-mcp-server
+cd ..
 ```
 
-Endpoints:
-- MCP: http://localhost:8000/mcp
-- Health: http://localhost:8000/health
+---
 
-**Local Python**
+### Step 4: Run the MCP Client
 ```bash
-pip install -r requirements.txt
-python qa_mcp_server.py
-```
-
-#### Step 4: Run the MCP Client
-```bash
-cd ../mcp-client
+cd qa-mcp/mcp-client
 python qa_mcp_client.py
 ```
 
 ---
 
 ## 5. Runtime Flow (End-to-End)
-1. Client queries MCP resources
+1. Client reads MCP resources
 2. Knowledge search executed
 3. Intent resolved deterministically
 4. LLM generates response
 5. Policies evaluated
-6. Action triggered if required
-7. Trace logs emitted
+6. Action triggered only if required
+7. Trace emitted
 
 ---
 
 ## 6. Configuration-Driven Design & Industry Switching
 
 All behavior is externalized:
-- `persona.yaml` → industry and tone
-- `intents.yaml` → intent taxonomy
-- `actions.yaml` → escalation rules
-
-Switching industries requires **no code changes**.
+- `persona.yaml`
+- `intents.yaml`
+- `actions.yaml`
 
 ---
 
 ## 7. Decision Logic & Escalation Policy
 
-**The LLM never decides escalation.**
-
-Escalation occurs only when:
-- User explicitly requests a human
-- High-severity intent detected
-- Confidence thresholds fail
-- Repeated fallback events
+### Core Principle
+The LLM never decides escalation.
 
 ---
 
 ## 8. Role of the LLM
 
-Used strictly for:
+Used only for:
 - Natural language generation
+- Persona tone
 - Knowledge explanation
-- Persona alignment
-
-The LLM cannot:
-- Trigger actions
-- Override policies
-- Escalate independently
 
 ---
 
 ## 9. Observability & Trace Logs
 
-Each request emits:
+Every interaction emits:
 - Knowledge latency
 - Intent latency
 - LLM latency
@@ -211,35 +190,23 @@ Each request emits:
 
 ## 10. Output Examples
 
-Screenshots and logs demonstrate:
-- Knowledge resolution
-- Escalation decisions
-- Action execution
+![](results/nres.png)
 
 ---
 
 ## 11. Extensibility & Upgrade Path
 
-Designed for growth:
-- Scalable knowledge stores
-- Industry-specific policy tuning
-- New action integrations (CRM, OSS/BSS)
-- Pluggable LLM providers
+Designed for future scaling and industry adaptation.
 
 ---
 
 ## 12. Why This Design Works
-- Deterministic control logic
+- Deterministic control
 - Safe LLM usage
-- Config-only industry switching
-- MCP-native clarity
+- Config-driven reuse
 
 ---
 
 ## 13. Summary
 
-A **production-grade MCP system** where:
-- Control logic is deterministic
-- LLMs enhance UX safely
-- Escalation is auditable
-- Industry behavior is configurable
+Production-grade MCP architecture with auditable control.
